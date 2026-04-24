@@ -820,15 +820,19 @@ button {
 }
 
 .message.assistant .message-content .message-table-wrap {
+  display: block;
+  max-width: 100%;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .message.assistant .message-content .message-table {
-  width: 100%;
-  min-width: 420px;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   border-spacing: 0;
   font-size: 14px;
+  table-layout: auto;
 }
 
 .message.assistant .message-content .message-table th,
@@ -837,12 +841,17 @@ button {
   text-align: left;
   vertical-align: top;
   border-bottom: 1px solid rgba(17, 24, 39, 0.08);
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  min-width: 140px;
 }
 
 .message.assistant .message-content .message-table th {
   color: #111827;
   font-weight: 700;
   background: rgba(17, 24, 39, 0.03);
+  white-space: nowrap;
 }
 
 .message.error .message-content {

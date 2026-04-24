@@ -3,7 +3,6 @@ import http from 'node:http'
 import path from 'node:path'
 
 import {
-  callCozeProjectStream,
   createLocalConversationId,
   streamCozeProjectToClient,
 } from './providers/coze-project.js'
@@ -131,37 +130,24 @@ const validateChatRequest = async (req, res, { stream = false } = {}) => {
   }
 }
 
-const handleChatRequest = async (req, res) => {
-  const requestData = await validateChatRequest(req, res)
-  if (!requestData) return
-
-  try {
-    const { rawText } = await callCozeProjectStream({
-      ...requestData,
-      debugFilePath: runtimePaths.debugSseFile,
-    })
-
-    sendJson(res, 200, {
-      success: true,
-      data: {
-        text: rawText || '我这边暂时没有拿到有效回复，请你换个问法再试一次。',
-        conversationId: requestData.sessionId,
-      },
-    })
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : 'Unknown error'
-    console.error('Coze chat failed:', detail)
-    sendJson(res, 502, {
-      success: false,
-      error: 'Coze chat request failed',
-      detail,
-    })
-  }
+const handleLegacyChatRequest = (res) => {
+  sendJson(res, 410, {
+    success: false,
+    error: 'The /api/chat endpoint has been retired. Use /api/chat/stream instead.',
+  })
 }
 
 const handleChatStreamRequest = async (req, res) => {
   const requestData = await validateChatRequest(req, res, { stream: true })
   if (!requestData) return
+
+  const upstreamController = new AbortController()
+  const handleClientClose = () => {
+    upstreamController.abort()
+  }
+
+  req.once('aborted', handleClientClose)
+  res.once('close', handleClientClose)
 
   res.writeHead(200, {
     'Content-Type': 'text/event-stream; charset=utf-8',
@@ -172,16 +158,26 @@ const handleChatStreamRequest = async (req, res) => {
   try {
     await streamCozeProjectToClient({
       ...requestData,
+      signal: upstreamController.signal,
       res,
       writeSse,
       debugFilePath: runtimePaths.debugSseFile,
     })
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'Unknown error'
-    console.error('Coze stream proxy failed:', detail)
-    writeSse(res, 'error', { error: detail })
+    if (!upstreamController.signal.aborted) {
+      console.error('Coze stream proxy failed:', detail)
+      if (!res.destroyed && !res.writableEnded) {
+        writeSse(res, 'error', { error: detail })
+      }
+    }
   } finally {
-    res.end()
+    req.off('aborted', handleClientClose)
+    res.off('close', handleClientClose)
+
+    if (!res.destroyed && !res.writableEnded) {
+      res.end()
+    }
   }
 }
 
@@ -199,7 +195,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && url.pathname === '/api/chat') {
-    await handleChatRequest(req, res)
+    handleLegacyChatRequest(res)
     return
   }
 

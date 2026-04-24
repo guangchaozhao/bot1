@@ -26,112 +26,18 @@ const getCozeErrorDetail = (payload, fallbackText) => (
   || fallbackText
 )
 
-const extractTextFromUnknown = (value) => {
-  if (typeof value === 'string') {
-    const trimmed = value.trim()
-    if (!trimmed) return ''
-
-    const parsed = tryParseJson(trimmed)
-    if (!parsed) return trimmed
-    return extractTextFromUnknown(parsed)
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) => extractTextFromUnknown(item)).filter(Boolean).join('\n').trim()
-  }
-
-  if (value && typeof value === 'object') {
-    const record = value
-    const candidates = [
-      record.content,
-      record.text,
-      record.answer,
-      record.output,
-      record.note,
-      record.notes,
-      record.data,
-      record.message,
-      record.messages,
-      record.content_list,
-    ]
-
-    for (const candidate of candidates) {
-      const extracted = extractTextFromUnknown(candidate)
-      if (extracted) return extracted
-    }
-  }
-
-  return ''
-}
-
-const isMeaningfulText = (value) => {
-  const trimmed = value.trim()
-  if (!trimmed) return false
-  if (trimmed === '~' || trimmed === '[DONE]') return false
-  if (/^[~`\-_=+*#|\\/<>]+$/.test(trimmed)) return false
-  return /[\u4e00-\u9fffA-Za-z0-9]/.test(trimmed)
-}
-
 const isAnswerChunk = (value) => {
+  if (typeof value !== 'string' || value.length === 0) return false
   const trimmed = value.trim()
-  if (!trimmed) return false
   if (trimmed === '~' || trimmed === '[DONE]') return false
   return true
 }
 
-export const formatAssistantText = (value) => {
-  let text = value.replace(/\r\n/g, '\n').trim()
-  if (!text) return text
-
-  const sectionKeywords = [
-    '标准版本',
-    '可选变体',
-    '结论',
-    '原因',
-    '推荐说法',
-    '注意事项',
-    '示例话术',
-  ]
-
-  for (const keyword of sectionKeywords) {
-    const pattern = new RegExp(`(?<!\\n)${keyword}(?=[：:])`, 'g')
-    text = text.replace(pattern, `\n${keyword}`)
-  }
-
-  text = text
-    .replace(/([。！？；])/g, '$1\n')
-    .replace(/(比如|例如|第一|第二|第三|最后|另外|还有|同时|如果|但是|所以)(?=[^\n])/g, '\n$1')
-
-  if (!/[。！？；\n]/.test(text) && text.length > 80) {
-    const splitHints = [
-      '结论',
-      '原因',
-      '推荐说法',
-      '注意事项',
-      '标准版本',
-      '可选变体',
-      '核心动作',
-      '报价前',
-      '常见问题',
-      '到店',
-      '邀约',
-      '跟进',
-      '不要',
-      '建议',
-      '如果',
-    ]
-
-    for (const hint of splitHints) {
-      const pattern = new RegExp(`(?<!\\n)${hint}`, 'g')
-      text = text.replace(pattern, `\n${hint}`)
-    }
-  }
-
-  return text
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/^\n+/, '')
-    .trim()
-}
+const getAnswerText = (payload) => (
+  typeof payload?.content?.answer === 'string'
+    ? payload.content.answer
+    : ''
+)
 
 const parseSseEventBlock = (block) => {
   if (!block.trim()) return null
@@ -141,23 +47,27 @@ const parseSseEventBlock = (block) => {
   const dataLines = []
 
   for (const line of lines) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
+    if (!line) continue
 
-    if (trimmed.startsWith('event:')) {
-      currentEvent = trimmed.slice(6).trim()
+    if (line.startsWith('event:')) {
+      currentEvent = line.slice(6).trim()
       continue
     }
 
-    if (trimmed.startsWith('data:')) {
-      dataLines.push(trimmed.slice(5).trim())
+    if (line.startsWith('data:')) {
+      let dataLine = line.slice(5)
+      if (dataLine.startsWith(' ')) {
+        dataLine = dataLine.slice(1)
+      }
+      dataLines.push(dataLine)
     }
   }
 
   if (!dataLines.length) return null
 
-  const dataStr = dataLines.join('\n').trim()
-  if (!dataStr || dataStr === '[DONE]' || dataStr === '~') return null
+  const dataStr = dataLines.join('\n')
+  const trimmed = dataStr.trim()
+  if (!trimmed || trimmed === '[DONE]' || trimmed === '~') return null
 
   return {
     event: currentEvent,
@@ -174,33 +84,24 @@ const parseCozeSseText = (sseText) => {
     const parsedEvent = parseSseEventBlock(chunk)
     if (!parsedEvent) continue
 
-    const { event: currentEvent, data } = parsedEvent
+    const { data } = parsedEvent
     if (!data || typeof data !== 'object') continue
 
     if (data.error || data.last_error) {
       throw new Error(getCozeErrorDetail(data.last_error || data.error, 'Coze stream failed'))
     }
 
-    if (data.type === 'answer') {
-      const answerText = typeof data.content?.answer === 'string'
-        ? data.content.answer
-        : ''
-
-      if (isAnswerChunk(answerText)) {
-        rawText += answerText
-      }
+    if (data.type !== 'answer') {
       continue
     }
 
-    if (!rawText && (currentEvent === 'done' || currentEvent === 'message')) {
-      const fallbackText = extractTextFromUnknown(data)
-      if (isMeaningfulText(fallbackText)) {
-        rawText = fallbackText
-      }
+    const answerText = getAnswerText(data)
+    if (isAnswerChunk(answerText)) {
+      rawText += answerText
     }
   }
 
-  return { rawText: formatAssistantText(rawText) }
+  return { rawText }
 }
 
 const createCozePayload = ({
@@ -236,10 +137,12 @@ export const callCozeProjectStream = async ({
   message,
   sessionId,
   debugFilePath,
+  signal,
 }) => {
   const response = await fetch(streamURL, {
     method: 'POST',
     headers: getCozeHeaders(token),
+    signal,
     body: JSON.stringify(createCozePayload({
       projectId,
       message,
@@ -269,10 +172,12 @@ export const streamCozeProjectToClient = async ({
   res,
   writeSse,
   debugFilePath,
+  signal,
 }) => {
   const response = await fetch(streamURL, {
     method: 'POST',
     headers: getCozeHeaders(token),
+    signal,
     body: JSON.stringify(createCozePayload({
       projectId,
       message,
@@ -323,18 +228,17 @@ export const streamCozeProjectToClient = async ({
         throw new Error(getCozeErrorDetail(data.last_error || data.error, 'Coze stream failed'))
       }
 
-      if (data.type === 'answer') {
-        const answerText = typeof data.content?.answer === 'string'
-          ? data.content.answer
-          : ''
+      if (data.type !== 'answer') {
+        continue
+      }
 
-        if (isAnswerChunk(answerText)) {
-          finalText += answerText
-          writeSse(res, 'delta', {
-            text: answerText,
-            conversationId: sessionId,
-          })
-        }
+      const answerText = getAnswerText(data)
+      if (isAnswerChunk(answerText)) {
+        finalText += answerText
+        writeSse(res, 'delta', {
+          text: answerText,
+          conversationId: sessionId,
+        })
       }
     }
   }
@@ -350,9 +254,7 @@ export const streamCozeProjectToClient = async ({
   if (buffer.trim()) {
     const parsedEvent = parseSseEventBlock(buffer)
     if (parsedEvent?.data?.type === 'answer') {
-      const answerText = typeof parsedEvent.data.content?.answer === 'string'
-        ? parsedEvent.data.content.answer
-        : ''
+      const answerText = getAnswerText(parsedEvent.data)
       if (isAnswerChunk(answerText)) {
         finalText += answerText
         writeSse(res, 'delta', {
@@ -363,8 +265,10 @@ export const streamCozeProjectToClient = async ({
     }
   }
 
-  writeSse(res, 'done', {
-    text: formatAssistantText(finalText),
-    conversationId: sessionId,
-  })
+  if (!signal?.aborted) {
+    writeSse(res, 'done', {
+      text: finalText,
+      conversationId: sessionId,
+    })
+  }
 }

@@ -3,7 +3,6 @@ import {
   escapeHtml,
   formatAssistantContent,
   normalizeAssistantText,
-  stripLayoutWhitespace,
 } from './message-format.js'
 import { createStorageApi } from './storage.js'
 
@@ -548,6 +547,7 @@ const sendMessage = async (overridePrompt = '') => {
 
   state.followOutput = true
   const assistantMessageId = createId()
+  let streamedRawText = ''
 
   appendMessage(session, {
     id: createId(),
@@ -592,7 +592,6 @@ const sendMessage = async (overridePrompt = '') => {
     const reader = response.body.getReader()
     const decoder = new TextDecoder('utf-8')
     let buffer = ''
-    let finalText = ''
 
     const applyEventBlock = (block) => {
       const lines = block.split(/\r?\n/)
@@ -600,14 +599,17 @@ const sendMessage = async (overridePrompt = '') => {
       const dataLines = []
 
       for (const line of lines) {
-        const trimmed = line.trim()
-        if (!trimmed) continue
-        if (trimmed.startsWith('event:')) {
-          eventName = trimmed.slice(6).trim()
+        if (!line) continue
+        if (line.startsWith('event:')) {
+          eventName = line.slice(6).trim()
           continue
         }
-        if (trimmed.startsWith('data:')) {
-          dataLines.push(trimmed.slice(5).trim())
+        if (line.startsWith('data:')) {
+          let dataLine = line.slice(5)
+          if (dataLine.startsWith(' ')) {
+            dataLine = dataLine.slice(1)
+          }
+          dataLines.push(dataLine)
         }
       }
 
@@ -623,13 +625,13 @@ const sendMessage = async (overridePrompt = '') => {
       if (eventName === 'delta') {
         const text = typeof payload?.text === 'string' ? payload.text : ''
         if (!text) return
-        finalText += text
+        streamedRawText += text
         if (payload?.conversationId) {
           session.conversationId = payload.conversationId
         }
         upsertAssistantMessage(session.id, assistantMessageId, (target) => {
           target.kind = 'streaming'
-          target.content = normalizeAssistantText(finalText, { streaming: true })
+          target.content = normalizeAssistantText(streamedRawText, { streaming: true })
           target.sourcePrompt = content
         })
         return
@@ -639,14 +641,7 @@ const sendMessage = async (overridePrompt = '') => {
         const doneText = typeof payload?.text === 'string' && payload.text.trim()
           ? payload.text
           : ''
-        const streamedText = normalizeAssistantText(finalText)
-        const text = doneText
-          ? (
-              stripLayoutWhitespace(doneText) === stripLayoutWhitespace(streamedText)
-                ? streamedText
-                : normalizeAssistantText(doneText)
-            )
-          : streamedText || messageConfig.emptyReply
+        const text = doneText || streamedRawText || messageConfig.emptyReply
         if (payload?.conversationId) {
           session.conversationId = payload.conversationId
         }
@@ -657,7 +652,7 @@ const sendMessage = async (overridePrompt = '') => {
           kind: 'plain',
           sourcePrompt: content,
         })
-        finalText = text
+        streamedRawText = text
         return
       }
 
@@ -687,7 +682,7 @@ const sendMessage = async (overridePrompt = '') => {
       applyEventBlock(buffer)
     }
 
-    if (!finalText.trim()) {
+    if (!streamedRawText.trim()) {
       replaceMessageById(session.id, assistantMessageId, {
         id: assistantMessageId,
         role: 'assistant',
@@ -698,7 +693,9 @@ const sendMessage = async (overridePrompt = '') => {
     }
   } catch (error) {
     const isAbort = error instanceof DOMException && error.name === 'AbortError'
-    const partialContent = session.messages.find((item) => item.id === assistantMessageId)?.content?.trim() || ''
+    const partialContent = streamedRawText.trim()
+      || session.messages.find((item) => item.id === assistantMessageId)?.content?.trim()
+      || ''
     replaceMessageById(session.id, assistantMessageId, {
       id: assistantMessageId,
       role: 'assistant',

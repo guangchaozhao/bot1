@@ -17,15 +17,51 @@ const splitTableRow = (line) => {
   return trimmed.split('|').map((cell) => cell.trim())
 }
 
+const isFenceMarker = (line) => line.trim().startsWith('```')
+const inlineTableDividerPattern = /\|?\s*:?-{3,}\s*(?:\|\s*:?-{3,}\s*)+\|?/
+
+const decodeBasicHtmlEntities = (value) => value
+  .replace(/&nbsp;/gi, ' ')
+  .replace(/&quot;/gi, '"')
+  .replace(/&#39;/gi, '\'')
+  .replace(/&lt;/gi, '<')
+  .replace(/&gt;/gi, '>')
+  .replace(/&amp;/gi, '&')
+
+const normalizeHtmlArtifacts = (value) => decodeBasicHtmlEntities(value)
+  .replace(/<pre\b[^>]*>\s*<code\b[^>]*>([\s\S]*?)<\/code>\s*<\/pre>/gi, (_, content) => `\n\`\`\`\n${decodeBasicHtmlEntities(content).trim()}\n\`\`\`\n`)
+  .replace(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi, (_, level, content) => `\n${'#'.repeat(Number(level))} ${decodeBasicHtmlEntities(content).trim()}\n`)
+  .replace(/<br\s*\/?>/gi, '\n')
+  .replace(/<\/?(?:div|p|section|article|header|footer|main|aside)\b[^>]*>/gi, '\n')
+  .replace(/<li\b[^>]*>/gi, '\n- ')
+  .replace(/<\/li>/gi, '\n')
+  .replace(/<\/?(?:ul|ol)\b[^>]*>/gi, '\n')
+  .replace(/<\/?(?:table|thead|tbody|tfoot)\b[^>]*>/gi, '\n')
+  .replace(/<tr\b[^>]*>/gi, '\n')
+  .replace(/<\/tr>/gi, '|\n')
+  .replace(/<(?:th|td)\b[^>]*>/gi, '| ')
+  .replace(/<\/(?:th|td)>/gi, ' ')
+  .replace(/<\/?(?:strong|b)\b[^>]*>/gi, '**')
+  .replace(/<\/?(?:em|i)\b[^>]*>/gi, '*')
+  .replace(/<\/?code\b[^>]*>/gi, '`')
+  .replace(/<\/?span\b[^>]*>/gi, '')
+
 const repairBrokenMarkdownLines = (value) => {
   const sourceLines = value.split('\n')
   const repaired = []
+  let inCodeBlock = false
 
   for (let index = 0; index < sourceLines.length; index += 1) {
     const current = sourceLines[index]
     const trimmed = current.trim()
 
-    if (/^#{1,6}$/.test(trimmed)) {
+    if (isFenceMarker(current)) {
+      repaired.push(current)
+      inCodeBlock = !inCodeBlock
+      continue
+    }
+
+    if (!inCodeBlock && /^#{1,6}$/.test(trimmed)) {
       const nextLine = sourceLines[index + 1]
       if (nextLine && nextLine.trim()) {
         repaired.push(`${trimmed} ${nextLine.trimStart()}`)
@@ -34,7 +70,7 @@ const repairBrokenMarkdownLines = (value) => {
       }
     }
 
-    if (/^(\*{1,2}|_{1,2})$/.test(trimmed) && repaired.length) {
+    if (!inCodeBlock && /^(\*{1,2}|_{1,2})$/.test(trimmed) && repaired.length) {
       repaired[repaired.length - 1] += trimmed
       continue
     }
@@ -45,30 +81,111 @@ const repairBrokenMarkdownLines = (value) => {
   return repaired.join('\n')
 }
 
-export const normalizeAssistantText = (value, { streaming = false } = {}) => {
-  let next = repairBrokenMarkdownLines(
-    value.replace(/\r\n/g, '\n').replace(/\u00a0/g, ' '),
-  )
+const repairInlineTableBlocks = (value) => {
+  const sourceLines = value.split('\n')
+  const repaired = []
+  let inCodeBlock = false
 
-  next = next
-    .replace(/(?<!\n)(#{1,6})(?=[\u4e00-\u9fa5A-Za-z])/g, '\n$1')
-    .replace(/(?<!\n)(结论|原因|推荐说法|注意事项|标准版本|可选变体|补充说明)(?=[:：])/g, '\n$1')
-    .replace(/([。！？；][”’"』」】）]?)\s*(?=[^\n])/g, '$1\n')
-    .replace(/(?<!\n)((?:\d+)[.)]\s+)/g, '\n$1')
-    .replace(/(?<![\n*])(\*\s+)/g, '\n$1')
-    .replace(/(?<!\n)([-•]\s+)/g, '\n$1')
-    .replace(/\n{3,}/g, '\n\n')
+  for (const current of sourceLines) {
+    if (isFenceMarker(current)) {
+      repaired.push(current)
+      inCodeBlock = !inCodeBlock
+      continue
+    }
 
-  if (streaming) {
-    return next.trimStart()
+    if (inCodeBlock || !current.includes('|')) {
+      repaired.push(current)
+      continue
+    }
+
+    const dividerMatch = current.match(inlineTableDividerPattern)
+    if (!dividerMatch || dividerMatch.index === undefined) {
+      repaired.push(current)
+      continue
+    }
+
+    const before = current.slice(0, dividerMatch.index).trimEnd()
+    const divider = dividerMatch[0].trim()
+    const after = current.slice(dividerMatch.index + dividerMatch[0].length).trimStart()
+
+    if (before) {
+      repaired.push(before)
+    }
+    repaired.push(divider)
+    if (after) {
+      repaired.push(after)
+    }
   }
 
-  return next.trim()
+  return repaired.join('\n')
+}
+
+const insertSoftBreaks = (line) => {
+  let next = line
+
+  next = next
+    .replace(/(?<!^)(#{1,6})(?=[\u4e00-\u9fa5A-Za-z])/g, '\n$1')
+    .replace(/(?<!^)(结论|原因|推荐说法|注意事项|标准版本|可选变体|补充说明)(?=[:：])/g, '\n$1')
+    .replace(/(?<!^)((?:\d+)[.)]\s+)/g, '\n$1')
+    .replace(/(?<!^)([-*•]\s+)/g, '\n$1')
+    .replace(/([。！？；][”’"』」】）]?)\s*(?=[^\n])/g, '$1\n')
+
+  return next
+}
+
+const prepareBlockSource = (value) => {
+  const source = repairInlineTableBlocks(
+    repairBrokenMarkdownLines(
+      normalizeHtmlArtifacts(
+        value
+          .replace(/\r\n/g, '\n')
+          .replace(/\u00a0/g, ' '),
+      ),
+    ),
+  )
+
+  const preparedLines = []
+  let inCodeBlock = false
+
+  for (const rawLine of source.split('\n')) {
+    if (isFenceMarker(rawLine)) {
+      preparedLines.push(rawLine)
+      inCodeBlock = !inCodeBlock
+      continue
+    }
+
+    if (inCodeBlock) {
+      preparedLines.push(rawLine)
+      continue
+    }
+
+    const trimmed = rawLine.trim()
+    if (!trimmed) {
+      preparedLines.push('')
+      continue
+    }
+
+    if (rawLine.includes('|') || trimmed.startsWith('>')) {
+      preparedLines.push(rawLine)
+      continue
+    }
+
+    preparedLines.push(...insertSoftBreaks(rawLine).split('\n'))
+  }
+
+  return preparedLines
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+}
+
+export const normalizeAssistantText = (value, { streaming = false } = {}) => {
+  const prepared = prepareBlockSource(value)
+  return streaming ? prepared.trimStart() : prepared.trim()
 }
 
 export const formatAssistantContent = (value) => {
-  const normalized = normalizeAssistantText(value)
-  if (!normalized) return ''
+  const source = prepareBlockSource(value).trim()
+  if (!source) return ''
 
   const html = []
   let activeList = ''
@@ -108,7 +225,7 @@ export const formatAssistantContent = (value) => {
     closeCodeBlock()
   }
 
-  const lines = normalized.split('\n')
+  const lines = source.split('\n')
 
   for (let index = 0; index < lines.length; index += 1) {
     const rawLine = lines[index]
@@ -192,7 +309,15 @@ export const formatAssistantContent = (value) => {
       continue
     }
 
-    const ordered = line.match(/^(\d+)[.)]\s+(.+)$/)
+    const chineseSectionHeading = line.match(/^([一二三四五六七八九十]+)、\s*(.+)$/)
+    if (chineseSectionHeading) {
+      closeList()
+      closeQuote()
+      html.push(`<h3>${formatInline(`${chineseSectionHeading[1]}、${chineseSectionHeading[2]}`)}</h3>`)
+      continue
+    }
+
+    const ordered = line.match(/^(\d+)[.)、]\s+(.+)$/)
     if (ordered) {
       closeQuote()
       if (activeList !== 'ol') {
@@ -212,7 +337,7 @@ export const formatAssistantContent = (value) => {
         html.push('<ul>')
         activeList = 'ul'
       }
-      html.push(`<li>${formatInline(unordered[1].replace(/^[-•]\s+/, ''))}</li>`)
+      html.push(`<li>${formatInline(unordered[1])}</li>`)
       continue
     }
 
