@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>内部话术培训助手</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell" id="appShell">
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+          <button class="brand-button" id="brandButton" type="button" aria-label="内部话术培训助手">
+            <span class="brand-mark" id="brandMark">B</span>
+          </button>
+          <button class="icon-button sidebar-collapse" id="collapseSidebarButton" type="button" aria-label="折叠侧边栏">
+            <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16M4 12h16M4 17h16" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="sidebar-actions">
+          <button class="sidebar-action" id="newChatButton" type="button">
+            <span class="sidebar-action-icon" aria-hidden="true">
+              <svg class="icon-svg" viewBox="0 0 24 24">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+            </span>
+            <span class="sidebar-action-label" id="newChatLabel">新聊天</span>
+          </button>
+
+          <label class="search-box" aria-label="搜索聊天">
+            <span class="search-icon" aria-hidden="true">
+              <svg class="icon-svg" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="6.5" />
+                <path d="m20 20-4.2-4.2" />
+              </svg>
+            </span>
+            <input id="searchInput" type="text" placeholder="搜索聊天" />
+          </label>
+        </div>
+
+        <div class="history-panel">
+          <div class="history-header">
+            <span id="historyHeaderLabel">最近</span>
+          </div>
+          <div class="session-groups" id="sessionGroups"></div>
+        </div>
+
+        <div class="sidebar-footer">
+          <div class="account-card">
+            <div class="account-avatar">话</div>
+            <div class="account-copy">
+              <strong id="accountName">哗哗</strong>
+              <span id="accountSubtitle">个人帐号</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+      <div class="sidebar-resize-handle" id="sidebarResizeHandle" aria-hidden="true"></div>
+
+      <button class="sidebar-scrim" id="sidebarScrim" type="button" aria-label="关闭侧边栏"></button>
+
+      <main class="chat-layout">
+        <header class="topbar">
+          <div class="topbar-left">
+            <button class="icon-button mobile-only" id="toggleSidebarButton" type="button" aria-label="打开历史">
+              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 7h16M4 12h16M4 17h16" />
+              </svg>
+            </button>
+            <button class="model-button" type="button">
+              <span class="model-title" id="modelTitle">内部话术培训助手</span>
+            </button>
+          </div>
+
+          <div class="topbar-right">
+            <button class="text-button with-icon" id="shareButton" type="button">
+              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 16V4" />
+                <path d="m7 9 5-5 5 5" />
+                <path d="M5 20h14" />
+              </svg>
+              <span id="shareButtonLabel">分享</span>
+            </button>
+            <button class="icon-button" type="button" aria-label="更多操作">
+              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="5" cy="12" r="1.7" />
+                <circle cx="12" cy="12" r="1.7" />
+                <circle cx="19" cy="12" r="1.7" />
+              </svg>
+            </button>
+          </div>
+        </header>
+
+        <section class="conversation-stage">
+          <div class="empty-hero" id="welcomeCard">
+            <div class="hero-eyebrow" id="welcomeEyebrow">Training Workspace</div>
+            <h1 id="welcomeTitle">内部话术培训助手</h1>
+            <p id="welcomeDescription">可以直接问开场白、报价逻辑、邀约到店、异议处理、材料要求和跟进方法。</p>
+            <div class="starter-grid" id="starterGrid"></div>
+          </div>
+
+          <section class="messages" id="messages"></section>
+          <button class="back-to-bottom" id="backToBottomButton" type="button" hidden aria-label="回到底部">
+            <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 6v12" />
+              <path d="m7 13 5 5 5-5" />
+            </svg>
+          </button>
+        </section>
+
+        <form class="composer-wrap" id="chatForm">
+          <div class="composer">
+            <textarea id="messageInput" rows="1" placeholder="有问题，尽管问"></textarea>
+
+            <div class="composer-right">
+              <button class="composer-cancel" id="cancelButton" type="button" hidden>取消</button>
+              <button class="send-button" id="sendButton" type="submit" aria-label="发送">
+                <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M5 12 19 5l-3 14-4-5-7-2Z" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="composer-meta">
+            <span id="composerHintPrimary">桌面端 Enter 发送，移动端回车换行</span>
+            <span id="composerHintSecondary">聊天记录只保存在当前浏览器</span>
+          </div>
+        </form>
+      </main>
+    </div>
+
+    <template id="messageTemplate">
+      <article class="message">
+        <div class="message-main">
+          <div class="message-content"></div>
+          <div class="message-actions">
+            <button class="message-action retry-action" type="button" aria-label="重新提问" title="重新提问">
+              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20 11a8 8 0 1 0-2.3 5.6" />
+                <path d="M20 4v7h-7" />
+              </svg>
+            </button>
+            <button class="message-action copy-action" type="button" aria-label="复制内容" title="复制内容">
+              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="9" y="9" width="10" height="10" rx="2" />
+                <path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </article>
+    </template>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

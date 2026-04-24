@@ -1,0 +1,7 @@
+.env
+debug/
+debug-payload.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
