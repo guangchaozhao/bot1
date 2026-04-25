@@ -147,7 +147,6 @@ const handleChatStreamRequest = async (req, res) => {
   }
 
   req.once('aborted', handleClientClose)
-  res.once('close', handleClientClose)
 
   res.writeHead(200, {
     'Content-Type': 'text/event-stream; charset=utf-8',
@@ -173,7 +172,6 @@ const handleChatStreamRequest = async (req, res) => {
     }
   } finally {
     req.off('aborted', handleClientClose)
-    res.off('close', handleClientClose)
 
     if (!res.destroyed && !res.writableEnded) {
       res.end()

@@ -2,18 +2,24 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+const moduleUrl = typeof import.meta !== 'undefined' ? import.meta.url : undefined
+const rootDir = typeof moduleUrl === 'string' && moduleUrl.startsWith('file:')
+  ? path.dirname(fileURLToPath(moduleUrl))
+  : process.cwd()
+const isWorkersBundle = rootDir.startsWith('/bundle')
+const runtimeBaseDir = isWorkersBundle
+  ? path.join('/tmp', 'bot1-runtime')
+  : rootDir
 
 export const runtimePaths = {
-  rootDir: __dirname,
-  publicDir: path.join(__dirname, 'public'),
-  debugDir: path.join(__dirname, 'debug'),
-  debugSseFile: path.join(__dirname, 'debug', 'last-coze-sse.txt'),
+  rootDir,
+  publicDir: path.join(rootDir, 'public'),
+  debugDir: path.join(runtimeBaseDir, 'debug'),
+  debugSseFile: path.join(runtimeBaseDir, 'debug', 'last-coze-sse.txt'),
 }
 
 const loadEnvFile = () => {
-  const envPath = path.join(__dirname, '.env')
+  const envPath = path.join(rootDir, '.env')
   if (!fs.existsSync(envPath)) return
 
   const envContent = fs.readFileSync(envPath, 'utf8')

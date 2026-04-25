@@ -1,6 +1,11 @@
 .env
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
 debug/
 debug-payload.json
+node_modules/
+.wrangler/
 
 # OS / editor
 .DS_Store

@@ -1,0 +1,20 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "bot1",
+  "main": "worker.js",
+  "compatibility_date": "2026-04-24",
+  "compatibility_flags": [
+    "nodejs_compat",
+    "enable_nodejs_http_server_modules"
+  ],
+  "assets": {
+    "directory": "./public",
+    "run_worker_first": [
+      "/api/*"
+    ],
+    "not_found_handling": "single-page-application"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

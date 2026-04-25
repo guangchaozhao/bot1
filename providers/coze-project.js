@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import path from 'node:path'
 
 const getCozeHeaders = (token) => ({
   Authorization: `Bearer ${token}`,
@@ -126,8 +127,25 @@ const createCozePayload = ({
   project_id: projectId,
 })
 
+const writeDebugFile = (filePath, content, { append = false } = {}) => {
+  if (!filePath) return
+
+  try {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true })
+    if (append) {
+      fs.appendFileSync(filePath, content, 'utf8')
+      return
+    }
+
+    fs.writeFileSync(filePath, content, 'utf8')
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'Unknown error'
+    console.warn('Unable to write Coze debug output:', detail)
+  }
+}
+
 export const createLocalConversationId = () => (
-  `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  `local-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
 )
 
 export const callCozeProjectStream = async ({
@@ -158,7 +176,7 @@ export const callCozeProjectStream = async ({
 
   const sseText = await response.text()
   if (debugFilePath) {
-    fs.writeFileSync(debugFilePath, sseText, 'utf8')
+    writeDebugFile(debugFilePath, sseText)
   }
   return parseCozeSseText(sseText)
 }
@@ -201,7 +219,7 @@ export const streamCozeProjectToClient = async ({
   let finalText = ''
 
   if (debugFilePath) {
-    fs.writeFileSync(debugFilePath, '', 'utf8')
+    writeDebugFile(debugFilePath, '')
   }
 
   while (true) {
@@ -211,7 +229,7 @@ export const streamCozeProjectToClient = async ({
     const textChunk = decoder.decode(value, { stream: true })
     buffer += textChunk
     if (debugFilePath) {
-      fs.appendFileSync(debugFilePath, textChunk, 'utf8')
+      writeDebugFile(debugFilePath, textChunk, { append: true })
     }
 
     const blocks = buffer.split(/\r?\n\r?\n/)
@@ -247,7 +265,7 @@ export const streamCozeProjectToClient = async ({
   if (tailText) {
     buffer += tailText
     if (debugFilePath) {
-      fs.appendFileSync(debugFilePath, tailText, 'utf8')
+      writeDebugFile(debugFilePath, tailText, { append: true })
     }
   }
 
