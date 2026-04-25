@@ -77,6 +77,15 @@
           </div>
 
           <div class="topbar-right">
+            <button class="icon-button" id="themeToggleButton" type="button" aria-label="鍒囨崲涓婚">
+              <svg class="icon-svg theme-icon-light" viewBox="0 0 24 24" aria-hidden="true" style="display: block;">
+                <circle cx="12" cy="12" r="5" />
+                <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+              </svg>
+              <svg class="icon-svg theme-icon-dark" viewBox="0 0 24 24" aria-hidden="true" style="display: none;">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+              </svg>
+            </button>
             <button class="text-button with-icon" id="shareButton" type="button">
               <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M12 16V4" />
@@ -132,6 +141,18 @@
           </div>
         </form>
       </main>
+    </div>
+
+    <div class="confirm-dialog" id="deleteDialog" hidden aria-hidden="true">
+      <button class="confirm-dialog-backdrop" id="deleteDialogBackdrop" type="button" aria-label="关闭删除确认"></button>
+      <section class="confirm-dialog-card" role="dialog" aria-modal="true" aria-labelledby="deleteDialogTitle">
+        <h2 class="confirm-dialog-title" id="deleteDialogTitle">删除聊天？</h2>
+        <p class="confirm-dialog-copy" id="deleteDialogCopy">删除后不可恢复。</p>
+        <div class="confirm-dialog-actions">
+          <button class="confirm-dialog-btn secondary" id="deleteDialogCancelButton" type="button">取消</button>
+          <button class="confirm-dialog-btn danger" id="deleteDialogConfirmButton" type="button">删除</button>
+        </div>
+      </section>
     </div>
 
     <template id="messageTemplate">

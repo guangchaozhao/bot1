@@ -38,6 +38,33 @@ const welcomeDescription = document.getElementById('welcomeDescription')
 const starterGrid = document.getElementById('starterGrid')
 const composerHintPrimary = document.getElementById('composerHintPrimary')
 const composerHintSecondary = document.getElementById('composerHintSecondary')
+const deleteDialog = document.getElementById('deleteDialog')
+const deleteDialogBackdrop = document.getElementById('deleteDialogBackdrop')
+const deleteDialogTitle = document.getElementById('deleteDialogTitle')
+const deleteDialogCopy = document.getElementById('deleteDialogCopy')
+const deleteDialogCancelButton = document.getElementById('deleteDialogCancelButton')
+const deleteDialogConfirmButton = document.getElementById('deleteDialogConfirmButton')
+
+const themeToggleButton = document.getElementById('themeToggleButton')
+if (themeToggleButton) {
+  const themeLightIcon = themeToggleButton.querySelector('.theme-icon-light')
+  const themeDarkIcon = themeToggleButton.querySelector('.theme-icon-dark')
+
+  // Load saved theme or prefer-color-scheme
+  const savedTheme = localStorage.getItem('theme') || 'light'
+  if (savedTheme === 'dark') {
+    document.documentElement.classList.add('dark')
+    themeLightIcon.style.display = 'none'
+    themeDarkIcon.style.display = 'block'
+  }
+
+  themeToggleButton.addEventListener('click', () => {
+    const isDark = document.documentElement.classList.toggle('dark')
+    localStorage.setItem('theme', isDark ? 'dark' : 'light')
+    themeLightIcon.style.display = isDark ? 'none' : 'block'
+    themeDarkIcon.style.display = isDark ? 'block' : 'none'
+  })
+}
 
 const ICONS = {
   rename: '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>',
@@ -48,6 +75,8 @@ const ICONS = {
   success: '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>',
   warning: '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5" /><path d="M12 17h.01" /><path d="M10.3 3.9 2.8 17a2 2 0 0 0 1.7 3h15a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" /></svg>',
   share: '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4" /><path d="m7 9 5-5 5 5" /><path d="M5 20h14" /></svg>',
+  dots: '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="1.5" /><circle cx="19" cy="12" r="1.5" /><circle cx="5" cy="12" r="1.5" /></svg>',
+  pin: '<svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 17v5" /><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" /></svg>',
 }
 
 const {
@@ -102,12 +131,16 @@ const state = {
   welcomeVisible: true,
   welcomeHideTimer: null,
   resizingSidebar: false,
+  openSessionMenuId: '',
+  deleteDialogSessionId: '',
 }
 
 if (!state.sessions.length) {
   state.sessions = [createSession()]
 }
 state.activeSessionId = state.sessions[0].id
+
+let deleteDialogRestoreTarget = null
 
 const getActiveSession = () => state.sessions.find((item) => item.id === state.activeSessionId)
 
@@ -244,6 +277,7 @@ const setWelcomeVisibility = (visible) => {
 }
 
 const startRenameSession = (sessionId) => {
+  state.openSessionMenuId = ''
   state.editingSessionId = sessionId
   renderSessions()
 }
@@ -261,7 +295,56 @@ const finishRenameSession = (sessionId, nextTitle, { commit } = { commit: true }
   }
 
   state.editingSessionId = ''
+  state.openSessionMenuId = ''
   renderSessions()
+}
+
+const closeDeleteDialog = ({ restoreFocus = true } = {}) => {
+  if (!deleteDialog) return
+
+  deleteDialog.hidden = true
+  deleteDialog.setAttribute('aria-hidden', 'true')
+  state.deleteDialogSessionId = ''
+
+  if (restoreFocus && deleteDialogRestoreTarget?.isConnected) {
+    deleteDialogRestoreTarget.focus()
+  }
+
+  deleteDialogRestoreTarget = null
+}
+
+const confirmDeleteSession = (sessionId) => {
+  state.sessions = state.sessions.filter((item) => item.id !== sessionId)
+  state.openSessionMenuId = ''
+  if (!state.sessions.length) {
+    state.sessions = [createSession()]
+  }
+  if (!state.sessions.find((item) => item.id === state.activeSessionId)) {
+    state.activeSessionId = state.sessions[0].id
+  }
+  saveSessions()
+  render()
+}
+
+const openDeleteDialog = (sessionId, trigger) => {
+  const session = state.sessions.find((item) => item.id === sessionId)
+  if (!session || !deleteDialog) return
+
+  state.openSessionMenuId = ''
+  state.deleteDialogSessionId = sessionId
+  deleteDialogRestoreTarget = trigger instanceof HTMLElement ? trigger : document.activeElement
+
+  if (deleteDialogTitle) {
+    deleteDialogTitle.textContent = '删除聊天？'
+  }
+  if (deleteDialogCopy) {
+    deleteDialogCopy.textContent = historyConfig.deleteConfirm(session.title)
+  }
+
+  renderSessions()
+  deleteDialog.hidden = false
+  deleteDialog.setAttribute('aria-hidden', 'false')
+  requestAnimationFrame(() => deleteDialogConfirmButton?.focus())
 }
 
 const renderSessions = () => {
@@ -289,7 +372,13 @@ const renderSessions = () => {
   }
 
   const buckets = new Map()
+  const pinnedItems = []
+
   for (const session of filtered) {
+    if (session.isPinned) {
+      pinnedItems.push(session)
+      continue
+    }
     const label = getBucketLabel(session.updatedAt)
     if (!buckets.has(label)) {
       buckets.set(label, [])
@@ -297,7 +386,15 @@ const renderSessions = () => {
     buckets.get(label).push(session)
   }
 
-  for (const [label, items] of buckets.entries()) {
+  const finalBuckets = new Map()
+  if (pinnedItems.length > 0) {
+    finalBuckets.set('置顶', pinnedItems)
+  }
+  for (const [k, v] of buckets) {
+    finalBuckets.set(k, v)
+  }
+
+  for (const [label, items] of finalBuckets.entries()) {
     const group = document.createElement('section')
     group.className = 'session-group'
 
@@ -310,6 +407,7 @@ const renderSessions = () => {
       const card = document.createElement('article')
       card.className = `session-card${session.id === state.activeSessionId ? ' active' : ''}`
       card.dataset.sessionId = session.id
+      const menuOpen = state.openSessionMenuId === session.id
       if (state.editingSessionId === session.id) {
         card.classList.add('editing')
         card.innerHTML = `
@@ -336,14 +434,25 @@ const renderSessions = () => {
             <span class="session-card-preview">${escapeHtml(session.preview || historyConfig.emptyPreview)}</span>
             <span class="session-card-time">${formatDateTime(session.updatedAt)}</span>
           </button>
-          <span class="session-card-actions">
-            <button class="session-menu-button" type="button" data-action="rename" data-session-id="${session.id}" aria-label="重命名">${ICONS.rename}</button>
-            <button class="session-menu-button" type="button" data-action="delete" data-session-id="${session.id}" aria-label="删除">${ICONS.delete}</button>
+          <span class="session-card-actions${menuOpen ? ' open' : ''}">
+            <button class="session-menu-button session-menu-trigger" type="button" data-action="toggle-menu" data-session-id="${session.id}" aria-label="更多操作" title="更多操作">${ICONS.dots}</button>
+            <span class="session-actions-drawer">
+              <button class="session-action-btn menu-item" type="button" data-action="rename" data-session-id="${session.id}" aria-label="重命名" title="重命名">
+                ${ICONS.rename}<span>重命名</span>
+              </button>
+              <button class="session-action-btn menu-item" type="button" data-action="pin" data-session-id="${session.id}" aria-label="${session.isPinned ? '取消置顶' : '置顶'}" title="${session.isPinned ? '取消置顶' : '置顶'}">
+                ${ICONS.pin}<span>${session.isPinned ? '取消置顶' : '置顶'}</span>
+              </button>
+              <button class="session-action-btn menu-item danger" type="button" data-action="delete" data-session-id="${session.id}" aria-label="删除" title="删除">
+                ${ICONS.delete}<span>删除</span>
+              </button>
+            </span>
           </span>
         `
 
         card.querySelector('[data-session-open]').addEventListener('click', () => {
           state.activeSessionId = session.id
+          state.openSessionMenuId = ''
           state.followOutput = true
           render()
           if (window.innerWidth <= 960) {
@@ -829,6 +938,20 @@ sessionGroups.addEventListener('click', (event) => {
   const session = state.sessions.find((item) => item.id === sessionId)
   if (!session) return
 
+  if (action === 'toggle-menu') {
+    state.openSessionMenuId = state.openSessionMenuId === sessionId ? '' : sessionId
+    renderSessions()
+    return
+  }
+
+  if (action === 'pin') {
+    session.isPinned = !session.isPinned
+    state.openSessionMenuId = ''
+    saveSessions()
+    render()
+    return
+  }
+
   if (action === 'rename') {
     startRenameSession(sessionId)
     return
@@ -846,17 +969,7 @@ sessionGroups.addEventListener('click', (event) => {
   }
 
   if (action === 'delete') {
-    const confirmed = window.confirm(historyConfig.deleteConfirm(session.title))
-    if (!confirmed) return
-    state.sessions = state.sessions.filter((item) => item.id !== sessionId)
-    if (!state.sessions.length) {
-      state.sessions = [createSession()]
-    }
-    if (!state.sessions.find((item) => item.id === state.activeSessionId)) {
-      state.activeSessionId = state.sessions[0].id
-    }
-    saveSessions()
-    render()
+    openDeleteDialog(sessionId, target)
   }
 })
 
@@ -918,6 +1031,11 @@ window.addEventListener('storage', () => {
 })
 
 window.addEventListener('keydown', (event) => {
+  if (!deleteDialog?.hidden && event.key === 'Escape') {
+    closeDeleteDialog()
+    return
+  }
+
   if (event.key === 'Escape' && sidebar.classList.contains('open')) {
     sidebar.classList.remove('open')
   }
@@ -927,6 +1045,30 @@ window.addEventListener('resize', () => {
   if (window.innerWidth > 960) {
     sidebar.classList.remove('open')
   }
+})
+
+window.addEventListener('click', (event) => {
+  if (!event.target.closest('.session-card-actions')) {
+    if (state.openSessionMenuId) {
+      state.openSessionMenuId = ''
+      renderSessions()
+    }
+  }
+})
+
+deleteDialogBackdrop?.addEventListener('click', () => {
+  closeDeleteDialog()
+})
+
+deleteDialogCancelButton?.addEventListener('click', () => {
+  closeDeleteDialog()
+})
+
+deleteDialogConfirmButton?.addEventListener('click', () => {
+  const sessionId = state.deleteDialogSessionId
+  if (!sessionId) return
+  closeDeleteDialog({ restoreFocus: false })
+  confirmDeleteSession(sessionId)
 })
 
 autoResizeTextarea()
